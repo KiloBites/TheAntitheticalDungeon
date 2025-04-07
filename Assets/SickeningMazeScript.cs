@@ -754,6 +754,34 @@ public class SickeningMazeScript : MonoBehaviour
 			yield return new WaitForSecondsRealtime(0.125f);
 		}
 	}
+
+	private class QueueInfo
+	{
+		public int[] Cells;
+		public int[] ParentCells;
+		public int CellDecimal;
+		public int? ParentCellDecimal;
+		public int? Direction;
+
+		public QueueInfo(int[] cells, int[] parentCells, int? direction)
+		{
+			Cells = cells;
+			ParentCells = parentCells;
+			CellDecimal = GetDecimal(cells);
+			ParentCellDecimal = parentCells == null ? null : (int?)GetDecimal(parentCells);
+			Direction = direction;
+		}
+
+		private int GetDecimal(int[] coords)
+		{
+			var dec = 0;
+
+			for (int i = 0; i < coords.Length; i++)
+				dec += coords[i] * (int)Math.Pow(3, 3 - i);
+
+			return dec;
+		}
+	}
 	
 	//twitch plays
     #pragma warning disable 414
@@ -881,5 +909,129 @@ public class SickeningMazeScript : MonoBehaviour
 			}
 			
 		}
+	}
+
+	IEnumerator TwitchHandleForcedSolve()
+	{
+		yield return null;
+
+		var coords = KeyPlacementDecimal.ToList();
+
+		var exit = 0;
+
+		for (int i = 0; i < 4; i++)
+		{
+			var exitCoords = new[] { 2, 2, 2, 2 };
+
+			exit += exitCoords[i] * (int)Math.Pow(3, 3 - i);
+		}
+
+		coords.Add(exit);
+
+		while (!Interactable)
+		{
+			if (ModuleSolved)
+				yield break;
+
+            yield return true;
+        }
+
+		if (Mode.text == "SHUT")
+		{
+			SendIt.OnInteract();
+			yield return new WaitForSeconds(0.1f);
+		}
+			
+
+		for (int i = 0; i < 4; i++)
+		{
+			if (i != 3 && KeyPlacementGathered.Contains(coords[i]))
+				continue;
+
+			var q = new Queue<QueueInfo>();
+			var visited = new Dictionary<int, QueueInfo>();
+
+			q.Enqueue(new QueueInfo(Coordinates, null, null));
+
+			while (q.Count > 0)
+			{
+				var qi = q.Dequeue();
+
+				if (visited.ContainsKey(qi.CellDecimal))
+					continue;
+
+				visited[qi.CellDecimal] = qi;
+
+				if (qi.CellDecimal == coords[i])
+					goto goalfound;
+
+				for (int j = 0; j < 8; j++)
+					if (MazeGenerated[qi.Cells[0], qi.Cells[1], qi.Cells[2],qi.Cells[3]].Count(x => x == "UDLRTBFP"[j]) == 0)
+					{
+						var modifiedCells = qi.Cells.ToArray();
+
+						switch (j)
+						{
+							case 0:
+								modifiedCells[2] = ((modifiedCells[2] - 1) + MazeColumn) % MazeColumn;
+								break;
+							case 1:
+                                modifiedCells[2] = (modifiedCells[2] + 1) % MazeColumn;
+								break;
+							case 2:
+								modifiedCells[3] = ((modifiedCells[3] - 1) + MazeRow) % MazeRow;
+								break;
+							case 3:
+								modifiedCells[3] = (modifiedCells[3] + 1) % MazeRow;
+								break;
+							case 4:
+								modifiedCells[1] = ((modifiedCells[1] - 1 ) + MazeFloor) % MazeFloor;
+								break;
+							case 5:
+								modifiedCells[1] = (modifiedCells[1] + 1) % MazeFloor;
+								break;
+							case 6:
+								modifiedCells[0] = ((modifiedCells[0] - 1 ) + MazeTimeline) % MazeTimeline;
+								break;
+							case 7:
+								modifiedCells[0] = (modifiedCells[0] + 1) % MazeTimeline;
+								break;
+                        }
+
+						q.Enqueue(new QueueInfo(modifiedCells, qi.Cells, j));
+					}
+			}
+
+			throw new InvalidOperationException("Cannot find valid path, making it unsolvable!");
+
+		goalfound:
+
+			var r = coords[i];
+			var path = new List<int>();
+
+			while (true)
+			{
+				var nr = visited[r];
+
+				if (nr.ParentCells == null)
+					break;
+
+				path.Add(nr.Direction.Value);
+
+				r = nr.ParentCellDecimal.Value;
+			}
+
+			for (int j = path.Count - 1; j >= 0; j--)
+			{
+				Arrows[path[j]].OnInteract();
+				yield return new WaitUntil(() => !Digger.isPlaying);
+			}
+
+			Checker.OnInteract();
+			yield return new WaitUntil(() => !Digger.isPlaying);
+		}
+
+		while (!ModuleSolved)
+			yield return true;
 	}
 }
